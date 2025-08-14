@@ -7,9 +7,28 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:460684467319:android:a6a8f337c73bf6cfb0fa72",
+        "mobilesdk_app_id": "1:460684467319:android:4745ea7b93bd032db0fa72",
         "android_client_info": {
-          "package_name": "com.myrideshare.driverapp"
+          "package_name": "com.rideshare.driver_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-Nqv0mM_AcD6i7QmXtY18D7h0D5QaZF0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460684467319:android:6863b03991bea7f6b0fa72",
+        "android_client_info": {
+          "package_name": "com.rideshare.rider_app"
         }
       },
       "oauth_client": [],
