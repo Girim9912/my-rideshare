@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+void requestRide(LatLng pickup, LatLng dropoff) async {
+  HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('matchRide');
+  final result = await callable.call({
+    'pickupLat': pickup.latitude,
+    'pickupLong': pickup.longitude,
+  });
+  print(result.data); // List of drivers
+}
 
 class HomeScreen extends StatefulWidget {
   @override
