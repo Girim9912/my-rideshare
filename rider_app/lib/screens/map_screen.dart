@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:rider_app/services/maps_service.dart';
 
 class MapScreen extends StatefulWidget {
   @override
@@ -11,7 +13,11 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _mapController;
   LatLng? _currentPosition;
+  LatLng? _pickupPosition;
+  LatLng? _dropoffPosition;
   bool _isLoading = true;
+  String? _rideId;
+  Map<String, dynamic>? _rideDetails;
 
   @override
   void initState() {
@@ -51,61 +57,132 @@ class _MapScreenState extends State<MapScreen> {
     );
     setState(() {
       _currentPosition = LatLng(position.latitude, position.longitude);
+      _pickupPosition = _currentPosition; // Default pickup
+      _dropoffPosition = LatLng(
+        position.latitude + 0.01,
+        position.longitude + 0.01,
+      ); // Default dropoff (offset for testing)
       _isLoading = false;
     });
 
     // Update user location in Firestore
-    String? userId = FirebaseFirestore.instance.currentUser?.uid;
+    String? userId = FirebaseAuth.instance.currentUser?.uid;
     if (userId != null) {
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'location': GeoPoint(position.latitude, position.longitude),
       });
+    }
+
+    // Listen for ride status updates
+    if (userId != null) {
+      FirebaseFirestore.instance
+          .collection('rides')
+          .where('riderId', isEqualTo: userId)
+          .where('status', isEqualTo: 'accepted')
+          .snapshots()
+          .listen((snapshot) async {
+        if (snapshot.docs.isNotEmpty) {
+          var ride = snapshot.docs.first;
+          setState(() {
+            _rideId = ride.id;
+            _rideDetails = ride.data();
+          });
+          // Get distance and ETA
+          if (_pickupPosition != null && _dropoffPosition != null) {
+            final distanceData = await MapsService().getDistanceAndTime(
+              _pickupPosition!,
+              _dropoffPosition!,
+            );
+            setState(() {
+              _rideDetails!['distance'] = distanceData['distance'];
+              _rideDetails!['duration'] = distanceData['duration'];
+            });
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _requestRide() async {
+    if (_pickupPosition == null || _dropoffPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please select pickup and dropoff locations')),
+      );
+      return;
+    }
+
+    String? userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId != null) {
+      var rideRef = await FirebaseFirestore.instance.collection('rides').add({
+        'riderId': userId,
+        'pickup': GeoPoint(_pickupPosition!.latitude, _pickupPosition!.longitude),
+        'dropoff': GeoPoint(_dropoffPosition!.latitude, _dropoffPosition!.longitude),
+        'status': 'requested',
+        'startTime': FieldValue.serverTimestamp(),
+      });
+      setState(() {
+        _rideId = rideRef.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ride requested')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Map')),
+      appBar: AppBar(title: Text('Rider Map')),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
-          : GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _currentPosition ?? LatLng(0, 0),
-                zoom: 14,
-              ),
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              onMapCreated: (controller) {
-                _mapController = controller;
-              },
-              markers: _currentPosition != null
-                  ? {
-                      Marker(
-                        markerId: MarkerId('current_location'),
-                        position: _currentPosition!,
-                        infoWindow: InfoWindow(title: 'You are here'),
-                      ),
-                    }
-                  : {},
+          : Column(
+              children: [
+                Expanded(
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _currentPosition ?? LatLng(0, 0),
+                      zoom: 14,
+                    ),
+                    myLocationEnabled: true,
+                    myLocationButtonEnabled: true,
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                    },
+                    markers: {
+                      if (_pickupPosition != null)
+                        Marker(
+                          markerId: MarkerId('pickup'),
+                          position: _pickupPosition!,
+                          infoWindow: InfoWindow(title: 'Pickup'),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                        ),
+                      if (_dropoffPosition != null)
+                        Marker(
+                          markerId: MarkerId('dropoff'),
+                          position: _dropoffPosition!,
+                          infoWindow: InfoWindow(title: 'Dropoff'),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                        ),
+                    },
+                  ),
+                ),
+                if (_rideDetails != null)
+                  Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'Ride Accepted! Distance: ${_rideDetails!['distance'] ?? 'N/A'}, ETA: ${_rideDetails!['duration'] ?? 'N/A'}',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          if (_currentPosition != null) {
-            await FirebaseFirestore.instance.collection('rides').add({
-              'riderId': FirebaseFirestore.instance.currentUser?.uid,
-              'pickup': GeoPoint(_currentPosition!.latitude, _currentPosition!.longitude),
-              'dropoff': GeoPoint(_currentPosition!.latitude + 0.01, _currentPosition!.longitude + 0.01), // Example
-              'status': 'requested',
-              'startTime': FieldValue.serverTimestamp(),
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Ride requested')),
-            );
-          }
-        },
-        child: Icon(Icons.directions_car),
-      ),
+      floatingActionButton: _rideId == null
+          ? FloatingActionButton(
+              onPressed: _requestRide,
+              child: Icon(Icons.directions_car),
+              tooltip: 'Request Ride',
+            )
+          : null,
     );
   }
 }

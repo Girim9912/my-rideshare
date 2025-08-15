@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:driver_app/services/auth.dart'; // Adjust path for rider_app
+import 'package:rider_app/services/auth.dart'; // Adjust path for rider_app
 
 class LoginScreen extends StatelessWidget {
   final AuthService _auth = AuthService();
